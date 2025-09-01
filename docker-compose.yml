@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: investiguard-postgres
+    environment:
+      POSTGRES_DB: investiguard
+      POSTGRES_USER: investiguard
+      POSTGRES_PASSWORD: investiguard123
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - investiguard-network
+
+  # Redis for caching and real-time features
+  redis:
+    image: redis:7-alpine
+    container_name: investiguard-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - investiguard-network
+
+  # Node.js Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: development
+    container_name: investiguard-backend
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://investiguard:investiguard123@postgres:5432/investiguard
+      REDIS_URL: redis://redis:6379
+      AI_SERVICE_URL: http://ai-service:8001
+      PORT: 3001
+    depends_on:
+      - postgres
+      - redis
+      - ai-service
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - investiguard-network
+    restart: unless-stopped
+
+  # FastAPI AI Service
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+      args:
+        ENVIRONMENT: development
+    container_name: investiguard-ai-service
+    ports:
+      - "8001:8001"
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql://investiguard:investiguard123@postgres:5432/investiguard
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./ai-service:/app
+    networks:
+      - investiguard-network
+    restart: unless-stopped
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: development
+    container_name: investiguard-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:3001
+      REACT_APP_AI_SERVICE_URL: http://localhost:8001
+    depends_on:
+      - backend
+      - ai-service
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - investiguard-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  investiguard-network:
+    driver: bridge
